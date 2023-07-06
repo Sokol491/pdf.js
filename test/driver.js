@@ -223,17 +223,20 @@ class Rasterize {
 
       // Rendering annotation layer as HTML.
       const parameters = {
-        viewport: annotationViewport,
-        div,
         annotations,
-        page,
         linkService: new SimpleLinkService(),
         imageResourcesPath,
         renderForms,
-        annotationCanvasMap: annotationImageMap,
       };
-      AnnotationLayer.render(parameters);
-      await l10n.translate(div);
+      const annotationLayer = new AnnotationLayer({
+        div,
+        annotationCanvasMap: annotationImageMap,
+        page,
+        l10n,
+        viewport: annotationViewport,
+      });
+      await annotationLayer.render(parameters);
+      await annotationLayer.showPopups();
 
       // Inline SVG images from text annotations.
       await inlineImages(div);
@@ -487,8 +490,24 @@ class Driver {
         });
         let promise = loadingTask.promise;
 
+        if (task.annotationStorage) {
+          for (const annotation of Object.values(task.annotationStorage)) {
+            if (annotation.bitmapName) {
+              promise = promise.then(async doc => {
+                const response = await fetch(
+                  new URL(`./images/${annotation.bitmapName}`, window.location)
+                );
+                const blob = await response.blob();
+                annotation.bitmap = await createImageBitmap(blob);
+
+                return doc;
+              });
+            }
+          }
+        }
+
         if (task.save) {
-          promise = loadingTask.promise.then(async doc => {
+          promise = promise.then(async doc => {
             if (!task.annotationStorage) {
               throw new Error("Missing `annotationStorage` entry.");
             }

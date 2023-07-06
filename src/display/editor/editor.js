@@ -21,6 +21,11 @@
 import { bindEvents, ColorManager } from "./tools.js";
 import { FeatureTest, shadow, unreachable } from "../../shared/util.js";
 
+// The dimensions of the resizer is 15x15:
+// https://searchfox.org/mozilla-central/rev/1ce190047b9556c3c10ab4de70a0e61d893e2954/toolkit/content/minimal-xul.css#136-137
+// so each dimension must be greater than RESIZER_SIZE.
+const RESIZER_SIZE = 16;
+
 /**
  * @typedef {Object} AnnotationEditorParameters
  * @property {AnnotationEditorUIManager} uiManager - the global manager
@@ -34,6 +39,8 @@ import { FeatureTest, shadow, unreachable } from "../../shared/util.js";
  * Base class for editors.
  */
 class AnnotationEditor {
+  #keepAspectRatio = false;
+
   #boundFocusin = this.focusin.bind(this);
 
   #boundFocusout = this.focusout.bind(this);
@@ -67,6 +74,7 @@ class AnnotationEditor {
     this.name = parameters.name;
     this.div = null;
     this._uiManager = parameters.uiManager;
+    this.annotationElementId = null;
 
     const {
       rotation,
@@ -84,6 +92,7 @@ class AnnotationEditor {
     this.y = parameters.y / height;
 
     this.isAttachedToDOM = false;
+    this.deleted = false;
   }
 
   static get _defaultLineColor() {
@@ -92,6 +101,17 @@ class AnnotationEditor {
       "_defaultLineColor",
       this._colorManager.getHexCode("CanvasText")
     );
+  }
+
+  static deleteAnnotationElement(editor) {
+    const fakeEditor = new FakeEditor({
+      id: editor.parent.getNextId(),
+      parent: editor.parent,
+      uiManager: editor._uiManager,
+    });
+    fakeEditor.annotationElementId = editor.annotationElementId;
+    fakeEditor.deleted = true;
+    fakeEditor._uiManager.addToAnnotationStorage(fakeEditor);
   }
 
   /**
@@ -269,14 +289,16 @@ class AnnotationEditor {
   setDims(width, height) {
     const [parentWidth, parentHeight] = this.parentDimensions;
     this.div.style.width = `${(100 * width) / parentWidth}%`;
-    this.div.style.height = `${(100 * height) / parentHeight}%`;
+    if (!this.#keepAspectRatio) {
+      this.div.style.height = `${(100 * height) / parentHeight}%`;
+    }
   }
 
   fixDims() {
     const { style } = this.div;
     const { height, width } = style;
     const widthPercent = width.endsWith("%");
-    const heightPercent = height.endsWith("%");
+    const heightPercent = !this.#keepAspectRatio && height.endsWith("%");
     if (widthPercent && heightPercent) {
       return;
     }
@@ -285,7 +307,7 @@ class AnnotationEditor {
     if (!widthPercent) {
       style.width = `${(100 * parseFloat(width)) / parentWidth}%`;
     }
-    if (!heightPercent) {
+    if (!this.#keepAspectRatio && !heightPercent) {
       style.height = `${(100 * parseFloat(height)) / parentHeight}%`;
     }
   }
@@ -471,6 +493,7 @@ class AnnotationEditor {
    */
   rebuild() {
     this.div?.addEventListener("focusin", this.#boundFocusin);
+    this.div?.addEventListener("focusout", this.#boundFocusout);
   }
 
   /**
@@ -479,8 +502,9 @@ class AnnotationEditor {
    * new annotation to add to the pdf document.
    *
    * To implement in subclasses.
+   * @param {boolean} isForCopying
    */
-  serialize() {
+  serialize(_isForCopying = false) {
     unreachable("An editor must be serializable");
   }
 
@@ -598,6 +622,47 @@ class AnnotationEditor {
     } else {
       this.parent.setActiveEditor(null);
     }
+  }
+
+  /**
+   * Set the aspect ratio to use when resizing.
+   * @param {number} width
+   * @param {number} height
+   */
+  setAspectRatio(width, height) {
+    this.#keepAspectRatio = true;
+    const aspectRatio = width / height;
+    const { style } = this.div;
+    style.aspectRatio = aspectRatio;
+    style.height = "auto";
+    if (aspectRatio >= 1) {
+      style.minHeight = `${RESIZER_SIZE}px`;
+      style.minWidth = `${Math.round(aspectRatio * RESIZER_SIZE)}px`;
+    } else {
+      style.minWidth = `${RESIZER_SIZE}px`;
+      style.minHeight = `${Math.round(RESIZER_SIZE / aspectRatio)}px`;
+    }
+  }
+
+  static get MIN_SIZE() {
+    return RESIZER_SIZE;
+  }
+}
+
+// This class is used to fake an editor which has been deleted.
+class FakeEditor extends AnnotationEditor {
+  constructor(params) {
+    super(params);
+    this.annotationElementId = params.annotationElementId;
+    this.deleted = true;
+  }
+
+  serialize() {
+    return {
+      id: this.annotationElementId,
+      deleted: true,
+      pageIndex: this.pageIndex,
+    };
   }
 }
 

@@ -134,3 +134,23 @@ const mockClipboard = async pages => {
   );
 };
 exports.mockClipboard = mockClipboard;
+
+const getSerialized = page =>
+  page.evaluate(() => {
+    const { map } =
+      window.PDFViewerApplication.pdfDocument.annotationStorage.serializable;
+    return map ? [...map.values()] : [];
+  });
+exports.getSerialized = getSerialized;
+
+function getEditors(page, kind) {
+  return page.evaluate(aKind => {
+    const elements = document.querySelectorAll(`.${aKind}Editor`);
+    const results = [];
+    for (const { id } of elements) {
+      results.push(id);
+    }
+    return results;
+  }, kind);
+}
+exports.getEditors = getEditors;

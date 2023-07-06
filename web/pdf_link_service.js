@@ -445,7 +445,7 @@ class PDFLinkService {
           // e.g. "4.3" or "true", because `JSON.parse` converted its type.
           dest = dest.toString();
         }
-      } catch (ex) {}
+      } catch {}
 
       if (
         typeof dest === "string" ||
@@ -567,20 +567,6 @@ class PDFLinkService {
     const refStr =
       pageRef.gen === 0 ? `${pageRef.num}R` : `${pageRef.num}R${pageRef.gen}`;
     return this.#pagesRefCache.get(refStr) || null;
-  }
-
-  /**
-   * @param {number} pageNumber
-   */
-  isPageVisible(pageNumber) {
-    return this.pdfViewer.isPageVisible(pageNumber);
-  }
-
-  /**
-   * @param {number} pageNumber
-   */
-  isPageCached(pageNumber) {
-    return this.pdfViewer.isPageCached(pageNumber);
   }
 
   static #isValidExplicitDestination(dest) {
@@ -744,20 +730,6 @@ class SimpleLinkService {
    * @param {Object} pageRef - reference to the page.
    */
   cachePageRef(pageNum, pageRef) {}
-
-  /**
-   * @param {number} pageNumber
-   */
-  isPageVisible(pageNumber) {
-    return true;
-  }
-
-  /**
-   * @param {number} pageNumber
-   */
-  isPageCached(pageNumber) {
-    return true;
-  }
 }
 
 export { LinkTarget, PDFLinkService, SimpleLinkService };

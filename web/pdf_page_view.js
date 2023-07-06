@@ -125,6 +125,7 @@ class PDFPageView {
   #textLayerMode = TextLayerMode.ENABLE;
 
   #useThumbnailCanvas = {
+    directDrawing: true,
     initialOptionalContent: true,
     regularAnnotations: true,
   };
@@ -169,6 +170,7 @@ class PDFPageView {
     this.resume = null;
     if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
       this._isStandalone = !this.renderingQueue?.hasViewer();
+      this._container = container;
     }
 
     this._annotationCanvasMap = null;
@@ -275,6 +277,22 @@ class PDFPageView {
   }
 
   setPdfPage(pdfPage) {
+    if (
+      (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
+      this._isStandalone &&
+      (this.pageColors?.foreground === "CanvasText" ||
+        this.pageColors?.background === "Canvas")
+    ) {
+      this._container?.style.setProperty(
+        "--hcm-highligh-filter",
+        pdfPage.filterFactory.addHighlightHCMFilter(
+          "CanvasText",
+          "Canvas",
+          "HighlightText",
+          "Highlight"
+        )
+      );
+    }
     this.pdfPage = pdfPage;
     this.pdfPageRotate = pdfPage.rotate;
 
@@ -552,6 +570,7 @@ class PDFPageView {
           optionalContentConfig.hasInitialVisibility;
       });
     }
+    this.#useThumbnailCanvas.directDrawing = true;
 
     const totalRotation = (this.rotation + this.pdfPageRotate) % 360;
     this.viewport = this.viewport.clone({
@@ -564,10 +583,7 @@ class PDFPageView {
       (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
       this._isStandalone
     ) {
-      this.div.parentNode?.style.setProperty(
-        "--scale-factor",
-        this.viewport.scale
-      );
+      this._container?.style.setProperty("--scale-factor", this.viewport.scale);
     }
 
     let isScalingRestricted = false;
@@ -605,6 +621,9 @@ class PDFPageView {
           // the rendering state to INITIAL, hence the next call to
           // PDFViewer.update() will trigger a redraw (if it's mandatory).
           this.renderingState = RenderingStates.FINISHED;
+          // Ensure that the thumbnails won't become partially (or fully) blank,
+          // if the sidebar is opened before the actual rendering is done.
+          this.#useThumbnailCanvas.directDrawing = false;
         }
 
         this.cssTransform({
@@ -616,6 +635,11 @@ class PDFPageView {
           hideTextLayer: postponeDrawing,
         });
 
+        if (postponeDrawing) {
+          // The "pagerendered"-event will be dispatched once the actual
+          // rendering is done, hence don't dispatch it here as well.
+          return;
+        }
         this.eventBus.dispatch("pagerendered", {
           source: this,
           pageNumber: this.id,
@@ -969,6 +993,7 @@ class PDFPageView {
             pdfPage,
             l10n,
             accessibilityManager: this._accessibilityManager,
+            annotationLayer: this.annotationLayer?.annotationLayer,
           });
         }
         this.#renderAnnotationEditorLayer();
@@ -1028,9 +1053,11 @@ class PDFPageView {
    * @ignore
    */
   get thumbnailCanvas() {
-    const { initialOptionalContent, regularAnnotations } =
+    const { directDrawing, initialOptionalContent, regularAnnotations } =
       this.#useThumbnailCanvas;
-    return initialOptionalContent && regularAnnotations ? this.canvas : null;
+    return directDrawing && initialOptionalContent && regularAnnotations
+      ? this.canvas
+      : null;
   }
 }
 

@@ -77,7 +77,7 @@ const config = JSON.parse(fs.readFileSync(CONFIG_FILE).toString());
 
 const ENV_TARGETS = [
   "last 2 versions",
-  "Chrome >= 88",
+  "Chrome >= 92",
   "Firefox ESR",
   "Safari >= 15.4",
   "Node >= 18",
@@ -185,10 +185,7 @@ function createWebpackConfig(
   const bundleDefines = builder.merge(defines, {
     BUNDLE_VERSION: versionInfo.version,
     BUNDLE_BUILD: versionInfo.commit,
-    TESTING:
-      defines.TESTING !== undefined
-        ? defines.TESTING
-        : process.env.TESTING === "true",
+    TESTING: defines.TESTING ?? process.env.TESTING === "true",
     DEFAULT_PREFERENCES: defaultPreferencesDir
       ? getDefaultPreferences(defaultPreferencesDir)
       : {},
@@ -232,7 +229,6 @@ function createWebpackConfig(
     pdfjs: "src",
     "pdfjs-web": "web",
     "pdfjs-lib": "web/pdfjs",
-    "pdfjs-fitCurve": "src/display/editor/fit_curve",
   };
   const viewerAlias = {
     "web-annotation_editor_params": "web/annotation_editor_params.js",
@@ -327,33 +323,40 @@ function checkChromePreferencesFile(chromePrefsPath, webPrefs) {
   const chromePrefsKeys = Object.keys(chromePrefs.properties).filter(key => {
     const description = chromePrefs.properties[key].description;
     // Deprecated keys are allowed in the managed preferences file.
-    // The code maintained is responsible for adding migration logic to
+    // The code maintainer is responsible for adding migration logic to
     // extensions/chromium/options/migration.js and web/chromecom.js .
     return !description || !description.startsWith("DEPRECATED.");
   });
-  chromePrefsKeys.sort();
-
-  const webPrefsKeys = Object.keys(webPrefs);
-  webPrefsKeys.sort();
-
-  if (webPrefsKeys.length !== chromePrefsKeys.length) {
-    console.log("Warning: Pref objects doesn't have the same length.");
-    return false;
-  }
 
   let ret = true;
-  for (let i = 0, ii = webPrefsKeys.length; i < ii; i++) {
-    const value = webPrefsKeys[i];
-    if (chromePrefsKeys[i] !== value) {
+  // Verify that every entry in webPrefs is also in preferences_schema.json.
+  for (const [key, value] of Object.entries(webPrefs)) {
+    if (!chromePrefsKeys.includes(key)) {
+      // Note: this would also reject keys that are present but marked as
+      // DEPRECATED. A key should not be marked as DEPRECATED if it is still
+      // listed in webPrefs.
       ret = false;
       console.log(
-        `Warning: not the same keys: ${chromePrefsKeys[i]} !== ${value}`
+        `Warning: ${chromePrefsPath} does not contain an entry for pref: ${key}`
       );
-    } else if (chromePrefs.properties[value].default !== webPrefs[value]) {
+    } else if (chromePrefs.properties[key].default !== value) {
       ret = false;
       console.log(
-        `Warning: not the same values (for "${value}"): ` +
-          `${chromePrefs.properties[value].default} !== ${webPrefs[value]}`
+        `Warning: not the same values (for "${key}"): ` +
+          `${chromePrefs.properties[key].default} !== ${value}`
+      );
+    }
+  }
+
+  // Verify that preferences_schema.json does not contain entries that are not
+  // in webPrefs (app_options.js).
+  for (const key of chromePrefsKeys) {
+    if (!(key in webPrefs)) {
+      ret = false;
+      console.log(
+        `Warning: ${chromePrefsPath} contains an unrecognized pref: ${key}. ` +
+          `Remove it, or prepend "DEPRECATED. " and add migration logic to ` +
+          `extensions/chromium/options/migration.js and web/chromecom.js.`
       );
     }
   }
@@ -571,26 +574,6 @@ function createImageDecodersBundle(defines) {
     .pipe(replaceJSRootName(imageDecodersAMDName, "pdfjsImageDecoders"));
 }
 
-function createFitCurveBundle(defines) {
-  const fitCurveOutputName = "fit_curve.js";
-
-  const fitCurveFileConfig = createWebpackConfig(
-    defines,
-    {
-      filename: fitCurveOutputName,
-      library: {
-        type: "module",
-      },
-    },
-    {
-      disableVersionInfo: true,
-    }
-  );
-  return gulp
-    .src("src/display/editor/fit_curve.js")
-    .pipe(webpack2Stream(fitCurveFileConfig));
-}
-
 function createCMapBundle() {
   return gulp.src(["external/bcmaps/*.bcmap", "external/bcmaps/LICENSE"], {
     base: "external/bcmaps",
@@ -615,7 +598,7 @@ function checkFile(filePath) {
   try {
     const stat = fs.lstatSync(filePath);
     return stat.isFile();
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -624,7 +607,7 @@ function checkDir(dirPath) {
   try {
     const stat = fs.lstatSync(dirPath);
     return stat.isDirectory();
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -790,10 +773,7 @@ function buildDefaultPreferences(defines, dir) {
     SKIP_BABEL: false,
     BUNDLE_VERSION: 0, // Dummy version
     BUNDLE_BUILD: 0, // Dummy build
-    TESTING:
-      defines.TESTING !== undefined
-        ? defines.TESTING
-        : process.env.TESTING === "true",
+    TESTING: defines.TESTING ?? process.env.TESTING === "true",
   });
 
   const inputStream = merge([
@@ -1551,7 +1531,6 @@ function buildLibHelper(bundleDefines, inputStream, outputDir) {
     defines: bundleDefines,
     map: {
       "pdfjs-lib": "../pdf",
-      "pdfjs-fitCurve": "./fit_curve",
     },
   };
   const licenseHeaderLibre = fs
@@ -1569,10 +1548,7 @@ function buildLib(defines, dir) {
   const bundleDefines = builder.merge(defines, {
     BUNDLE_VERSION: versionInfo.version,
     BUNDLE_BUILD: versionInfo.commit,
-    TESTING:
-      defines.TESTING !== undefined
-        ? defines.TESTING
-        : process.env.TESTING === "true",
+    TESTING: defines.TESTING ?? process.env.TESTING === "true",
     DEFAULT_PREFERENCES: getDefaultPreferences(
       defines.SKIP_BABEL ? "lib/" : "lib-legacy/"
     ),
@@ -1588,7 +1564,12 @@ function buildLib(defines, dir) {
       { base: "src/" }
     ),
     gulp.src(
-      ["examples/node/domstubs.js", "web/*.js", "!web/{pdfjs,viewer}.js"],
+      [
+        "examples/node/domstubs.js",
+        "external/webL10n/l10n.js",
+        "web/*.js",
+        "!web/{pdfjs,viewer}.js",
+      ],
       { base: "." }
     ),
     gulp.src("test/unit/*.js", { base: "." }),
@@ -1690,90 +1671,54 @@ function setTestEnv(done) {
   done();
 }
 
-gulp.task("dev-fitCurve", function createDevFitCurve() {
-  console.log();
-  console.log("### Building development fitCurve");
-
-  const defines = builder.merge(DEFINES, { GENERIC: true, TESTING: true });
-  const fitCurveDir = BUILD_DIR + "dev-fitCurve/";
-
-  rimraf.sync(fitCurveDir);
-
-  return createFitCurveBundle(defines).pipe(gulp.dest(fitCurveDir));
-});
-
 gulp.task(
   "test",
-  gulp.series(
-    setTestEnv,
-    "generic",
-    "components",
-    "dev-fitCurve",
-    function runTest() {
-      return streamqueue(
-        { objectMode: true },
-        createTestSource("unit"),
-        createTestSource("browser"),
-        createTestSource("integration")
-      );
-    }
-  )
+  gulp.series(setTestEnv, "generic", "components", function runTest() {
+    return streamqueue(
+      { objectMode: true },
+      createTestSource("unit"),
+      createTestSource("browser"),
+      createTestSource("integration")
+    );
+  })
 );
 
 gulp.task(
   "bottest",
-  gulp.series(
-    setTestEnv,
-    "generic",
-    "components",
-    "dev-fitCurve",
-    function runBotTest() {
-      return streamqueue(
-        { objectMode: true },
-        createTestSource("unit", { bot: true }),
-        createTestSource("font", { bot: true }),
-        createTestSource("browser", { bot: true }),
-        createTestSource("integration")
-      );
-    }
-  )
+  gulp.series(setTestEnv, "generic", "components", function runBotTest() {
+    return streamqueue(
+      { objectMode: true },
+      createTestSource("unit", { bot: true }),
+      createTestSource("font", { bot: true }),
+      createTestSource("browser", { bot: true }),
+      createTestSource("integration")
+    );
+  })
 );
 
 gulp.task(
   "xfatest",
-  gulp.series(
-    setTestEnv,
-    "generic",
-    "components",
-    "dev-fitCurve",
-    function runXfaTest() {
-      return streamqueue(
-        { objectMode: true },
-        createTestSource("unit"),
-        createTestSource("browser", { xfaOnly: true }),
-        createTestSource("integration")
-      );
-    }
-  )
+  gulp.series(setTestEnv, "generic", "components", function runXfaTest() {
+    return streamqueue(
+      { objectMode: true },
+      createTestSource("unit"),
+      createTestSource("browser", { xfaOnly: true }),
+      createTestSource("integration")
+    );
+  })
 );
 
 gulp.task(
   "botxfatest",
-  gulp.series(
-    setTestEnv,
-    "generic",
-    "components",
-    "dev-fitCurve",
-    function runBotXfaTest() {
-      return streamqueue(
-        { objectMode: true },
-        createTestSource("unit", { bot: true }),
-        createTestSource("font", { bot: true }),
-        createTestSource("browser", { bot: true, xfaOnly: true }),
-        createTestSource("integration")
-      );
-    }
-  )
+  gulp.series(setTestEnv, "generic", "components", function runBotXfaTest() {
+    return streamqueue(
+      { objectMode: true },
+      createTestSource("unit", { bot: true }),
+      createTestSource("font", { bot: true }),
+      createTestSource("browser", { bot: true, xfaOnly: true }),
+      createTestSource("integration")
+    );
+  })
 );
 
 gulp.task(
@@ -1800,7 +1745,7 @@ gulp.task(
 
 gulp.task(
   "unittest",
-  gulp.series(setTestEnv, "generic", "dev-fitCurve", function runUnitTest() {
+  gulp.series(setTestEnv, "generic", function runUnitTest() {
     return createTestSource("unit");
   })
 );
@@ -2028,13 +1973,6 @@ gulp.task(
 gulp.task(
   "server",
   gulp.parallel(
-    function watchDevFitCurve() {
-      gulp.watch(
-        ["src/display/editor/*"],
-        { ignoreInitial: false },
-        gulp.series("dev-fitCurve")
-      );
-    },
     function watchDevSandbox() {
       gulp.watch(
         [
@@ -2436,5 +2374,9 @@ gulp.task("externaltest", function (done) {
 
 gulp.task(
   "ci-test",
-  gulp.series(gulp.parallel("lint", "externaltest", "unittestcli"), "typestest")
+  gulp.series(
+    gulp.parallel("lint", "externaltest", "unittestcli"),
+    "lint-chromium",
+    "typestest"
+  )
 );

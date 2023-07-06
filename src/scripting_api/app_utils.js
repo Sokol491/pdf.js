@@ -1,4 +1,4 @@
-/* Copyright 2022 Mozilla Foundation
+/* Copyright 2020 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,19 @@
  * limitations under the License.
  */
 
-const fitCurve = require(PDFJSDev.test("LIB")
-  ? "fit-curve"
-  : "fit-curve/src/fit-curve.js");
+const VIEWER_TYPE = "PDF.js";
+const VIEWER_VARIATION = "Full";
+const VIEWER_VERSION = 21.00720099;
+const FORMS_VERSION = 21.00720099;
 
-export { fitCurve };
+const USERACTIVATION_CALLBACKID = 0;
+const USERACTIVATION_MAXTIME_VALIDITY = 5000;
+
+export {
+  FORMS_VERSION,
+  USERACTIVATION_CALLBACKID,
+  USERACTIVATION_MAXTIME_VALIDITY,
+  VIEWER_TYPE,
+  VIEWER_VARIATION,
+  VIEWER_VERSION,
+};

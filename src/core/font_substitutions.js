@@ -281,6 +281,25 @@ const substitutionMap = new Map([
       fallback: "Helvetica-BoldOblique",
     },
   ],
+  [
+    "Wingdings",
+    {
+      local: ["Wingdings", "URW Dingbats"],
+      style: NORMAL,
+    },
+  ],
+  [
+    "Wingdings-Regular",
+    {
+      alias: "Wingdings",
+    },
+  ],
+  [
+    "Wingdings-Bold",
+    {
+      alias: "Wingdings",
+    },
+  ],
 ]);
 
 const fontAliases = new Map([["Arial-Black", "ArialBlack"]]);
@@ -465,10 +484,12 @@ function getFontSubstitution(
     src.push(`local(${baseFontName})`);
   }
   const { style, ultimate } = generateFont(substitution, src, localFontPath);
+  const guessFallback = ultimate === null;
+  const fallback = guessFallback ? "" : `,${ultimate}`;
 
   substitutionInfo = {
-    css: `${loadedName},${ultimate}`,
-    guessFallback: false,
+    css: `${loadedName}${fallback}`,
+    guessFallback,
     loadedName,
     baseFontName,
     src: src.join(","),
